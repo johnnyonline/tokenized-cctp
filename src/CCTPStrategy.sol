@@ -19,16 +19,14 @@ contract CCTPStrategy is BaseCrossChain, BaseCCTP {
         address _messageTransmitter,
         uint32 _remoteDomain,
         uint256 _remoteChainId,
-        address _remoteCounterpart,
-        address _depositer
+        address _remoteCounterpart
     )
         BaseCrossChain(
             _asset,
             _name,
             bytes32(uint256(_remoteDomain)),
             _remoteChainId,
-            _remoteCounterpart,
-            _depositer
+            _remoteCounterpart
         )
         BaseCCTP(_asset, _tokenMessenger, _messageTransmitter)
     {
@@ -40,7 +38,7 @@ contract CCTPStrategy is BaseCrossChain, BaseCCTP {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Bridge assets to remote chain via CCTP
-    /// @dev Called by BaseCrossChain._deployFunds()
+    /// @dev Called by BaseCrossChain._tend()
     function _bridgeAssets(
         uint256 _amount
     ) internal override returns (uint256) {
@@ -50,7 +48,7 @@ contract CCTPStrategy is BaseCrossChain, BaseCCTP {
             _addressToBytes32(REMOTE_COUNTERPART),
             address(asset),
             bytes32(0),
-            0,
+            _minFee(_amount),
             FINALITY_THRESHOLD_FINALIZED
         );
 

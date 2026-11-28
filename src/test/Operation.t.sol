@@ -21,19 +21,19 @@ contract OperationTest is Setup {
         assertEq(strategy.keeper(), keeper);
 
         // Generic cross-chain properties
-        assertEq(strategy.DEPOSITER(), depositor);
+        assertTrue(strategy.allowed(depositor));
         assertEq(strategy.REMOTE_COUNTERPART(), address(remoteStrategy));
         assertEq(calculateRemoteAssets(strategy), 0);
     }
 
-    // Test 2: Only DEPOSITER can deposit (generic access control test)
+    // Test 2: Only allowed addresses can deposit (generic access control test)
     function test_depositLimits() public useEthFork {
         uint256 _amount = 1000e6; // $1000 USDC
 
         // Non-depositer cannot deposit (availableDepositLimit = 0)
         assertEq(strategy.availableDepositLimit(user), 0);
 
-        // DEPOSITER can deposit (availableDepositLimit = max)
+        // Allowed depositor can deposit (availableDepositLimit = max)
         assertEq(strategy.availableDepositLimit(depositor), type(uint256).max);
 
         // Try to deposit as user (should fail)
@@ -58,7 +58,7 @@ contract OperationTest is Setup {
     function test_depositLimitsFuzz(uint256 _amount) public useEthFork {
         _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
 
-        // DEPOSITER can deposit (availableDepositLimit = max)
+        // Allowed depositor can deposit (availableDepositLimit = max)
         assertEq(strategy.availableDepositLimit(depositor), type(uint256).max);
 
         // Deposit as depositer (should succeed)
@@ -68,6 +68,45 @@ contract OperationTest is Setup {
         strategy.deposit(_amount, depositor);
         vm.stopPrank();
 
+        assertEq(strategy.totalAssets(), _amount);
+    }
+
+    // Test 3: Deposits stay idle, even one made by an outsider for an allowed receiver
+    function test_deposit_doesNotBridge() public useEthFork {
+        uint256 _amount = 1000e6;
+
+        airdropUSDC(user, _amount);
+        vm.startPrank(user);
+        USDC_ETHEREUM.approve(address(strategy), _amount);
+        strategy.deposit(_amount, depositor);
+        vm.stopPrank();
+
+        assertEq(USDC_ETHEREUM.balanceOf(address(strategy)), _amount);
+        assertEq(strategy.remoteAssets(), 0);
+        assertEq(strategy.lastRemoteAssetsReport(), 0);
+        assertEq(strategy.totalAssets(), _amount);
+    }
+
+    // Test 3b: Only a keeper's tend bridges the idle funds
+    function test_tend_bridgesIdle() public useEthFork {
+        uint256 _amount = 1000e6;
+
+        airdropUSDC(depositor, _amount);
+        vm.startPrank(depositor);
+        USDC_ETHEREUM.approve(address(strategy), _amount);
+        strategy.deposit(_amount, depositor);
+        vm.stopPrank();
+
+        vm.expectRevert("!keeper");
+        vm.prank(user);
+        strategy.tend();
+
+        vm.prank(keeper);
+        strategy.tend();
+
+        assertEq(USDC_ETHEREUM.balanceOf(address(strategy)), 0);
+        assertEq(strategy.remoteAssets(), _amount);
+        assertEq(strategy.lastRemoteAssetsReport(), block.timestamp);
         assertEq(strategy.totalAssets(), _amount);
     }
 
@@ -225,10 +264,7 @@ contract OperationTest is Setup {
         assertEq(strategy.lastRemoteAssetsReport(), freshTimestamp);
     }
 
-    function test_deployTimestampRejectsPreDepositReport()
-        public
-        useEthFork
-    {
+    function test_deployTimestampRejectsPreDepositReport() public useEthFork {
         uint256 _amount = 10000e6;
         uint256 staleRemoteTotal = 9000e6;
 

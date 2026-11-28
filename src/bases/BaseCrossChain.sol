@@ -8,9 +8,6 @@ import {BaseHealthCheck} from "@periphery/Bases/HealthCheck/BaseHealthCheck.sol"
 abstract contract BaseCrossChain is BaseHealthCheck {
     event RemoteAssetsUpdated(uint256 indexed amount);
 
-    /// @notice Address allowed to deposit into this strategy
-    address public immutable DEPOSITER;
-
     /// @notice Remote chain identifier specific to bridge implementation.
     bytes32 public immutable REMOTE_ID;
 
@@ -31,17 +28,14 @@ abstract contract BaseCrossChain is BaseHealthCheck {
         string memory _name,
         bytes32 _remoteId,
         uint256 _remoteChainId,
-        address _remoteCounterpart,
-        address _depositer
+        address _remoteCounterpart
     ) BaseHealthCheck(_asset, _name) {
         require(_remoteCounterpart != address(0), "ZeroAddress");
-        require(_depositer != address(0), "ZeroAddress");
         // Note: _remoteId can be 0 for some chains (e.g., Ethereum domain = 0)
 
         REMOTE_ID = _remoteId;
         REMOTE_CHAIN_ID = _remoteChainId;
         REMOTE_COUNTERPART = _remoteCounterpart;
-        DEPOSITER = _depositer;
 
         _setProfitLimitRatio(1_000); // 10%
     }
@@ -51,6 +45,8 @@ abstract contract BaseCrossChain is BaseHealthCheck {
     //////////////////////////////////////////////////////////////*/
 
     /// @notice Reports total assets including remote deployments
+    /// @dev Don't report while a withdrawal from the remote is in flight, or
+    ///      the returned assets are counted twice.
     /// @return _totalAssets Sum of local balance and remote assets
     function _harvestAndReport()
         internal
@@ -73,14 +69,6 @@ abstract contract BaseCrossChain is BaseHealthCheck {
         return balanceOfAsset();
     }
 
-    /// @notice Restrict deposits to specific depositer address
-    /// @dev Override to change deposit access control
-    function availableDepositLimit(
-        address _owner
-    ) public view virtual override returns (uint256) {
-        return _owner == DEPOSITER ? type(uint256).max : 0;
-    }
-
     /// @notice Handles incoming cross-chain messages
     /// @param amount Total amount of assets the remote strategy has.
     /// @param timestamp Timestamp when the remote strategy sent the report.
@@ -93,10 +81,10 @@ abstract contract BaseCrossChain is BaseHealthCheck {
         }
 
         // NOTE: Reports older than the current watermark are ignored. Since
-        // local deploys also update that watermark, a valid remote report can
-        // still be skipped if it was sent before a later deposit. For example,
+        // local tends also update that watermark, a valid remote report can
+        // still be skipped if it was sent before a later tend. For example,
         // a withdrawal can trigger a lower remote asset report that arrives
-        // after a new deposit already increased remoteAssets locally. In that
+        // after a new tend already increased remoteAssets locally. In that
         // case accounting can remain incorrect until the next fresh remote
         // report replaces the local estimate.
         lastRemoteAssetsReport = timestamp;
@@ -112,11 +100,14 @@ abstract contract BaseCrossChain is BaseHealthCheck {
                         DEPLOYMENT LOGIC
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Deploy funds to remote chain
-    function _deployFunds(uint256 _amount) internal virtual override {
-        uint256 newRemoteAssets = remoteAssets + _bridgeAssets(_amount);
-        // Count deposits as remote assets immediately and advance the report
-        // watermark so a report sent before this deploy cannot later overwrite
+    /// @notice Deposits stay idle. A keeper bridges them with `tend()`.
+    function _deployFunds(uint256) internal pure virtual override {}
+
+    /// @notice Bridge all idle assets to the remote chain.
+    function _tend(uint256 _totalIdle) internal virtual override {
+        uint256 newRemoteAssets = remoteAssets + _bridgeAssets(_totalIdle);
+        // Count bridged assets as remote immediately and advance the report
+        // watermark so a report sent before this tend cannot later overwrite
         // the locally-added amount before the remote side has received it.
         lastRemoteAssetsReport = block.timestamp;
         remoteAssets = newRemoteAssets;

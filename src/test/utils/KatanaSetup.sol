@@ -249,8 +249,7 @@ contract KatanaSetup is Test, IEvents {
                     VB_USDC,
                     UNIFIED_BRIDGE,
                     KATANA_NETWORK_ID,
-                    address(remoteStrategy),
-                    depositor
+                    address(remoteStrategy)
                 )
             )
         );
@@ -266,6 +265,10 @@ contract KatanaSetup is Test, IEvents {
 
         vm.prank(management);
         strategy.setKeeper(keeper);
+
+        // Deposits are gated by the BaseHealthCheck allowed mapping.
+        vm.prank(management);
+        strategy.setAllowed(depositor, true);
 
         factory = strategy.FACTORY();
     }
@@ -307,6 +310,10 @@ contract KatanaSetup is Test, IEvents {
 
         vm.prank(_user);
         _strategy.deposit(_amount, _user);
+
+        // Deposits stay idle until a keeper bridges them.
+        vm.prank(keeper);
+        _strategy.tend();
     }
 
     /// @notice Airdrop asset and deposit into strategy

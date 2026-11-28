@@ -27,6 +27,10 @@ contract CCTPIntegrationTest is Setup {
         uint256 shares = strategy.deposit(depositAmount, depositor);
         vm.stopPrank();
 
+        // Step 2: Keeper bridges the idle funds
+        vm.prank(keeper);
+        strategy.tend();
+
         assertGt(shares, 0);
         assertEq(strategy.balanceOf(depositor), shares);
 
@@ -45,7 +49,7 @@ contract CCTPIntegrationTest is Setup {
         assertGt(vaultBalance, 0);
 
         // Earn interest
-        skip(1);
+        skip(10);
 
         // Step 5: Send exposure report back (report() also pushes any remaining idle funds)
         vm.prank(keeper);
@@ -91,7 +95,7 @@ contract CCTPIntegrationTest is Setup {
 
         vm.selectFork(baseFork);
 
-        skip(1);
+        skip(10);
 
         vm.prank(keeper);
         remoteStrategy.processWithdrawal(withdrawAmount);
@@ -367,7 +371,7 @@ contract CCTPIntegrationTest is Setup {
         _completeDepositFlow(_amount);
 
         // Send report from remote to origin to sync accounting
-        skip(1);
+        skip(10);
         vm.prank(keeper);
         (uint256 reportedAssets, ) = remoteStrategy.report();
         uint256 reportTimestamp = block.timestamp;

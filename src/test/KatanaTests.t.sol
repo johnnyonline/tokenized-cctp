@@ -48,8 +48,7 @@ contract KatanaStrategyConstructorTest is KatanaSetup {
                     VB_USDC,
                     UNIFIED_BRIDGE,
                     KATANA_NETWORK_ID,
-                    remoteCounterpart,
-                    depositor
+                    remoteCounterpart
                 )
             )
         );
@@ -72,7 +71,8 @@ contract KatanaStrategyConstructorTest is KatanaSetup {
             remoteCounterpart,
             "Remote counterpart mismatch"
         );
-        assertEq(newStrategy.DEPOSITER(), depositor, "Depositer mismatch");
+        // Deposits are gated by the BaseHealthCheck allowed mapping (set post-deploy).
+        assertFalse(newStrategy.allowed(depositor), "Should start disallowed");
     }
 
     function test_constructor_verifyRealVbTokenProperties() public useEthFork {
@@ -115,8 +115,7 @@ contract KatanaStrategyConstructorTest is KatanaSetup {
                     VB_USDC,
                     UNIFIED_BRIDGE,
                     KATANA_NETWORK_ID,
-                    remoteCounterpart,
-                    depositor
+                    remoteCounterpart
                 )
             )
         );
@@ -139,8 +138,7 @@ contract KatanaStrategyConstructorTest is KatanaSetup {
             address(0),
             UNIFIED_BRIDGE,
             KATANA_NETWORK_ID,
-            remoteCounterpart,
-            depositor
+            remoteCounterpart
         );
     }
 
@@ -155,8 +153,7 @@ contract KatanaStrategyConstructorTest is KatanaSetup {
             VB_WETH,
             UNIFIED_BRIDGE,
             KATANA_NETWORK_ID,
-            remoteCounterpart,
-            depositor
+            remoteCounterpart
         );
     }
 
@@ -171,22 +168,6 @@ contract KatanaStrategyConstructorTest is KatanaSetup {
             VB_USDC,
             UNIFIED_BRIDGE,
             KATANA_NETWORK_ID,
-            address(0),
-            depositor
-        );
-    }
-
-    function test_constructor_zeroDepositor_reverts() public useEthFork {
-        address remoteCounterpart = address(0xBEEF);
-
-        vm.expectRevert("ZeroAddress");
-        new KatanaStrategy(
-            USDC,
-            "Katana USDC Strategy",
-            VB_USDC,
-            UNIFIED_BRIDGE,
-            KATANA_NETWORK_ID,
-            remoteCounterpart,
             address(0)
         );
     }
@@ -201,8 +182,7 @@ contract KatanaStrategyConstructorTest is KatanaSetup {
             VB_USDC,
             address(0),
             KATANA_NETWORK_ID,
-            remoteCounterpart,
-            depositor
+            remoteCounterpart
         );
     }
 
@@ -217,8 +197,7 @@ contract KatanaStrategyConstructorTest is KatanaSetup {
                     VB_USDC,
                     UNIFIED_BRIDGE,
                     KATANA_NETWORK_ID,
-                    remoteCounterpart,
-                    depositor
+                    remoteCounterpart
                 )
             )
         );
@@ -267,6 +246,9 @@ contract KatanaStrategyDepositBridgeTest is KatanaSetup {
         strategy.deposit(depositAmount, depositor);
         vm.stopPrank();
 
+        vm.prank(keeper);
+        strategy.tend();
+
         // Verify remoteAssets increased (funds were bridged)
         assertEq(
             strategy.remoteAssets(),
@@ -276,7 +258,7 @@ contract KatanaStrategyDepositBridgeTest is KatanaSetup {
         assertEq(
             strategy.lastRemoteAssetsReport(),
             block.timestamp,
-            "Deposit should update report watermark"
+            "Tend should update report watermark"
         );
 
         // Verify no USDC left in strategy (all bridged via vbToken)
@@ -296,6 +278,9 @@ contract KatanaStrategyDepositBridgeTest is KatanaSetup {
         IERC20(USDC).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, depositor);
         vm.stopPrank();
+
+        vm.prank(keeper);
+        strategy.tend();
 
         uint256 depositTimestamp = strategy.lastRemoteAssetsReport();
 
@@ -375,6 +360,9 @@ contract KatanaStrategyDepositBridgeTest is KatanaSetup {
         strategy.deposit(firstDeposit, depositor);
         vm.stopPrank();
 
+        vm.prank(keeper);
+        strategy.tend();
+
         assertEq(strategy.remoteAssets(), firstDeposit, "After first deposit");
 
         // Second deposit
@@ -383,6 +371,9 @@ contract KatanaStrategyDepositBridgeTest is KatanaSetup {
         IERC20(USDC).approve(address(strategy), secondDeposit);
         strategy.deposit(secondDeposit, depositor);
         vm.stopPrank();
+
+        vm.prank(keeper);
+        strategy.tend();
 
         assertEq(
             strategy.remoteAssets(),
@@ -418,6 +409,9 @@ contract KatanaStrategyDepositBridgeTest is KatanaSetup {
         IERC20(USDC).approve(address(strategy), _amount);
         strategy.deposit(_amount, depositor);
         vm.stopPrank();
+
+        vm.prank(keeper);
+        strategy.tend();
 
         assertEq(
             strategy.remoteAssets(),
@@ -746,6 +740,9 @@ contract KatanaStrategyWithdrawalTest is KatanaSetup {
         strategy.deposit(depositAmount, depositor);
         vm.stopPrank();
 
+        vm.prank(keeper);
+        strategy.tend();
+
         // At this point, user has shares but no withdrawable balance
         uint256 withdrawLimit = strategy.availableWithdrawLimit(depositor);
         assertEq(withdrawLimit, 0, "No funds available yet");
@@ -786,6 +783,9 @@ contract KatanaStrategyWithdrawalTest is KatanaSetup {
         IERC20(USDC).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, depositor);
         vm.stopPrank();
+
+        vm.prank(keeper);
+        strategy.tend();
 
         // Get vbToken and redeem (simulating partial return)
         uint256 partialReturn = 50_000e6;
@@ -1568,6 +1568,9 @@ contract KatanaIntegrationTest is KatanaSetup {
         strategy.deposit(depositAmount, depositor);
         vm.stopPrank();
 
+        vm.prank(keeper);
+        strategy.tend();
+
         // 2. Verify remoteAssets updated
         assertEq(
             strategy.remoteAssets(),
@@ -1601,6 +1604,9 @@ contract KatanaIntegrationTest is KatanaSetup {
         IERC20(USDC).approve(address(strategy), depositAmount);
         strategy.deposit(depositAmount, depositor);
         vm.stopPrank();
+
+        vm.prank(keeper);
+        strategy.tend();
 
         // 2. No funds available yet
         assertEq(
@@ -1797,6 +1803,9 @@ contract KatanaIntegrationTest is KatanaSetup {
         IERC20(USDC).approve(address(strategy), _depositAmount);
         strategy.deposit(_depositAmount, depositor);
         vm.stopPrank();
+
+        vm.prank(keeper);
+        strategy.tend();
 
         assertEq(strategy.remoteAssets(), _depositAmount);
 
